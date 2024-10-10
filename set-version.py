@@ -21,6 +21,8 @@ def set_version():
 
     version = version.replace("refs/tags/v", "")
 
+    print(f"Setting version to {version}...")
+
     lines = []
     init_py = "taoswswrap/__init__.py"
     with open(init_py) as fp:
