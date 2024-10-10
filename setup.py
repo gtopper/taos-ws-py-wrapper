@@ -42,7 +42,7 @@ tests_require = load_deps("dev-requirements.txt")
 
 setup(
     name="taoswswrap",
-    version="0.1.0",
+    version=version(),
     description="Wrapper for TDEngine websocket client",
     long_description_content_type="text/markdown",
     author="Iguazio",
