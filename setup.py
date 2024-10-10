@@ -30,14 +30,10 @@ def load_deps(file_name):
 install_requires = load_deps("requirements.txt")
 
 
-with open("README.md") as fp:
-    long_desc = fp.read()
-
 setup(
     name="taos-ws-py-wrapper",
     version="0.1.0",
     description="Wrapper for TDEngine websocket client",
-    long_description=long_desc,
     long_description_content_type="text/markdown",
     author="Iguazio",
     author_email="galt@iguazio.com",
