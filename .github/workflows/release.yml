@@ -26,6 +26,8 @@ jobs:
       image: python:3.9.18
     steps:
       - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: make dev-env
       - name: lint
         run: make lint
       - name: Set version
