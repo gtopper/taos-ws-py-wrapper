@@ -31,7 +31,7 @@ install_requires = load_deps("requirements.txt")
 
 
 setup(
-    name="taos-ws-py-wrapper",
+    name="taoswswrap",
     version="0.1.0",
     description="Wrapper for TDEngine websocket client",
     long_description_content_type="text/markdown",
@@ -39,7 +39,7 @@ setup(
     author_email="galt@iguazio.com",
     license="Apache",
     url="https://github.com/gtopper/taos-ws-py-wrapper",
-    packages=find_packages(include=["taos-ws-py-wrapper*"]),
+    packages=find_packages(include=["taoswswrap*"]),
     python_requires=">=3.9",
     install_requires=install_requires,
     classifiers=[
