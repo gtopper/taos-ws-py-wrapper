@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import multiprocessing
-from _queue import Empty
 
 import taosws
+from _queue import Empty
 
 
 class QueryResult:
@@ -34,11 +34,7 @@ class Field:
         self.bytes = bytes
 
     def __eq__(self, other):
-        return (
-            self.name == other.name
-            and self.type == other.type
-            and self.bytes == other.bytes
-        )
+        return self.name == other.name and self.type == other.type and self.bytes == other.bytes
 
 
 class Statement:
@@ -73,9 +69,7 @@ class TDEngineConnection:
             res = conn.query(query)
 
             # taosws.TaosField is not serializable
-            fields = [
-                Field(field.name(), field.type(), field.bytes()) for field in res.fields
-            ]
+            fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
 
             q.put(QueryResult(list(res), fields))
         except Exception as e:
@@ -89,9 +83,7 @@ class TDEngineConnection:
         overall_retries = retries
         while retries >= 0:
             q = mp.Queue()
-            print(
-                f"111 Starting process: mp.Process(target={self._run}, args=[{q}, {statements}, {query}])"
-            )
+            print(f"111 Starting process: mp.Process(target={self._run}, args=[{q}, {statements}, {query}])")
             process = mp.Process(target=self._run, args=[q, statements, query])
             try:
                 process.start()

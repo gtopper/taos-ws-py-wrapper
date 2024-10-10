@@ -15,6 +15,15 @@
 from setuptools import find_packages, setup
 
 
+def version() -> str:
+    with open("taoswswrap/__init__.py") as fp:
+        for line in fp:
+            if line.startswith("__version__"):
+                _, version = line.split("=")
+                return version.replace('"', "").strip()
+    raise ValueError("Could not find package version")
+
+
 def load_deps(file_name):
     """Load dependencies from requirements file"""
     deps = []
@@ -28,6 +37,7 @@ def load_deps(file_name):
 
 
 install_requires = load_deps("requirements.txt")
+tests_require = load_deps("dev-requirements.txt")
 
 
 setup(
@@ -55,4 +65,5 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Software Development :: Libraries",
     ],
+    tests_require=tests_require,
 )
