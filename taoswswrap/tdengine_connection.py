@@ -83,7 +83,6 @@ class TDEngineConnection:
         overall_retries = retries
         while retries >= 0:
             q = mp.Queue()
-            print(f"111 Starting process: mp.Process(target={self._run}, args=[{q}, {statements}, {query}])")
             process = mp.Process(target=self._run, args=[q, statements, query])
             try:
                 process.start()
@@ -95,10 +94,6 @@ class TDEngineConnection:
                     return result
                 except Empty:
                     query_msg_part = f" and query '{query}'" if query else ""
-                    print(
-                        f"TDEngine statements {statements}{query_msg_part} timed out after {timeout} seconds. "
-                        f"{retries} retries left."
-                    )
                     if retries == 0:
                         raise TimeoutError(
                             f"TDEngine statements {statements}{query_msg_part} timed out after {timeout} seconds "
