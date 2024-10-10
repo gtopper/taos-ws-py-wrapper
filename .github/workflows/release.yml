@@ -11,12 +11,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+name: Release
 
-__version__ = "0.0.0+unstable"
+on:
+  release:
+    types:
+      - created
 
-from .tdengine_connection import (  # noqa: F401
-    Field,
-    QueryResult,
-    Statement,
-    TDEngineConnection,
-)
+jobs:
+  release:
+    runs-on: [ Linux ]
+    container:
+      image: python:3.9.18
+    steps:
+      - uses: actions/checkout@v3
+      - name: lint
+        run: make lint
+      - name: Set version
+        run: make set-version
+      - name: Build binary wheel and source tarball
+        run: make dist
+      - name: Publish package
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_TOKEN }}
