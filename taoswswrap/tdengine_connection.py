@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import multiprocessing
+import os
 
 import taosws
 from _queue import Empty
@@ -46,6 +47,35 @@ class Statement:
         return self.function(statement, **self.kwargs)
 
 
+def _cleanup():
+    # check for processes which have finished
+    for p in list(multiprocessing.process._children):
+        if (child_popen := p._popen) and child_popen.poll() is not None:
+            multiprocessing.process._children.discard(p)
+
+
+mp = multiprocessing.get_context("spawn")
+
+
+# https://github.com/python/cpython/issues/104536
+# Delete when support for python < 3.11.4 is dropped
+class Process(mp.Process):
+    def start(self):
+        self._check_closed()
+        assert self._popen is None, "cannot start a process twice"
+        assert self._parent_pid == os.getpid(), "can only start a process object created by current process"
+        assert not multiprocessing.process._current_process._config.get(
+            "daemon"
+        ), "daemonic processes are not allowed to have children"
+        _cleanup()
+        self._popen = self._Popen(self)
+        self._sentinel = self._popen.sentinel
+        # Avoid a refcycle if the target function holds an indirect
+        # reference to the process object (see bpo-30775)
+        del self._target, self._args, self._kwargs
+        multiprocessing.process._children.add(self)
+
+
 class TDEngineConnection:
     def __init__(self, connection_string):
         self._connection_string = connection_string
@@ -76,14 +106,13 @@ class TDEngineConnection:
             q.put(e)
 
     def run(self, statements=None, query=None, retries=2, timeout=5):
-        mp = multiprocessing.get_context("spawn")
         statements = statements or []
         if not isinstance(statements, list):
             statements = [statements]
         overall_retries = retries
         while retries >= 0:
             q = mp.Queue()
-            process = mp.Process(target=self._run, args=[q, statements, query])
+            process = Process(target=self._run, args=[q, statements, query])
             try:
                 process.start()
                 process.join(timeout=timeout)
