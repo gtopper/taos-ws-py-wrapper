@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import multiprocessing
-import traceback
 import os
+import traceback
 
 import taosws
 from _queue import Empty
