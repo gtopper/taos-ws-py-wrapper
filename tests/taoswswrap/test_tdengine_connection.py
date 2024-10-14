@@ -13,15 +13,11 @@
 # limitations under the License.
 
 import os
+from datetime import datetime, timezone
 
 import pytest
 
-from taoswswrap.tdengine_connection import (
-    Field,
-    QueryResult,
-    TDEngineConnection,
-    TDEngineError,
-)
+from taoswswrap.tdengine_connection import Field, TDEngineConnection, TDEngineError
 
 connection_string = os.getenv("TAOSWS_CONNECTION_STRING")
 
@@ -45,10 +41,15 @@ def test_tdengine_connection():
         ],
         query="SELECT * FROM mytable",
     )
-    assert res == QueryResult(
-        [("2024-10-09 11:33:06.455 +08:00", 1.0)],
-        [Field("column1", "TIMESTAMP", 8), Field("column2", "FLOAT", 4)],
+    assert res.fields == [Field("column1", "TIMESTAMP", 8), Field("column2", "FLOAT", 4)]
+    assert len(res.data) == 1
+    data = res.data[0]
+    assert len(data) == 2
+    col1, col2 = data
+    assert datetime.strptime(col1, "%Y-%m-%d %H:%M:%S.%f %z").astimezone(timezone.utc) == datetime(
+        2024, 10, 9, 3, 33, 6, 455000, tzinfo=timezone.utc
     )
+    assert col2 == 1
 
 
 @pytest.mark.skipif(not is_tdengine_defined(), reason="TDEngine is not defined")
