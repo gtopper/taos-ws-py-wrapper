@@ -28,6 +28,9 @@ class QueryResult:
     def __eq__(self, other):
         return self.data == other.data and self.fields == other.fields
 
+    def __repr__(self):
+        return f"QueryResult({self.data}, {self.fields})"
+
 
 class Field:
     def __init__(self, name, type, bytes):
@@ -37,6 +40,9 @@ class Field:
 
     def __eq__(self, other):
         return self.name == other.name and self.type == other.type and self.bytes == other.bytes
+
+    def __repr__(self):
+        return f"Field({self.name}, {self.type}, {self.bytes})"
 
 
 class TDEngineError(Exception):
