@@ -15,9 +15,13 @@
 import os
 
 import pytest
-import taosws
 
-from taoswswrap.tdengine_connection import Field, QueryResult, TDEngineConnection
+from taoswswrap.tdengine_connection import (
+    Field,
+    QueryResult,
+    TDEngineConnection,
+    TDEngineError,
+)
 
 connection_string = os.getenv("TAOSWS_CONNECTION_STRING")
 
@@ -51,8 +55,12 @@ def test_tdengine_connection():
 def test_tdengine_connection_error_propagation():
     conn = TDEngineConnection(connection_string)
 
-    with pytest.raises(taosws.QueryError, match="Internal error: `Database not exist`"):
+    try:
         conn.run(statements="USE idontexist")
+        pytest.fail("Expected an error")
+    except TDEngineError as e:
+        assert "TDEngine statements ['USE idontexist'] failed with an error after 2 retries" in str(e)
+        assert "Internal error: `Database not exist`" in str(e)
 
 
 @pytest.mark.skipif(not is_tdengine_defined(), reason="TDEngine is not defined")

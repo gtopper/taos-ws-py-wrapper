@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import multiprocessing
+import traceback
 
 import taosws
 from _queue import Empty
@@ -35,6 +36,16 @@ class Field:
 
     def __eq__(self, other):
         return self.name == other.name and self.type == other.type and self.bytes == other.bytes
+
+
+class TDEngineError(Exception):
+    pass
+
+
+class ErrorResult:
+    def __init__(self, tb, err):
+        self.tb = tb
+        self.err = err
 
 
 class Statement:
@@ -73,7 +84,8 @@ class TDEngineConnection:
 
             q.put(QueryResult(list(res), fields))
         except Exception as e:
-            q.put(e)
+            tb = traceback.format_exc()
+            q.put(ErrorResult(tb, e))
 
     def run(self, statements=None, query=None, retries=2, timeout=5):
         mp = multiprocessing.get_context("spawn")
@@ -89,9 +101,15 @@ class TDEngineConnection:
                 process.join(timeout=timeout)
                 try:
                     result = q.get(timeout=0)
-                    if isinstance(result, Exception):
-                        raise result
-                    return result
+                    if isinstance(result, ErrorResult):
+                        if retries == 0:
+                            query_msg_part = f" and query '{query}'" if query else ""
+                            raise TDEngineError(
+                                f"TDEngine statements {statements}{query_msg_part} failed with an error after "
+                                f"{overall_retries} retries – {type(result.err).__name__}: {result.err}: {result.tb}"
+                            )
+                    else:
+                        return result
                 except Empty:
                     query_msg_part = f" and query '{query}'" if query else ""
                     if retries == 0:
@@ -99,10 +117,10 @@ class TDEngineConnection:
                             f"TDEngine statements {statements}{query_msg_part} timed out after {timeout} seconds "
                             f"and {overall_retries} retries"
                         )
-                    retries -= 1
+                retries -= 1
             finally:
                 try:
-                    process.terminate()
+                    process.kill()
                     process.close()
                 except Exception:
                     pass
