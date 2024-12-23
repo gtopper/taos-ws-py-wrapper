@@ -18,6 +18,7 @@ import traceback
 
 import taosws
 from _queue import Empty
+from taosws import TaosStmt
 
 
 class QueryResult:
@@ -55,13 +56,40 @@ class ErrorResult:
         self.err = err
 
 
-class Statement:
-    def __init__(self, function, kwargs):
-        self.function = function
-        self.kwargs = kwargs
+def values_to_column(values, column_type):
+    if column_type == "TIMESTAMP":
+        timestamps = [round(timestamp.timestamp() * 1000) for timestamp in values]
+        return taosws.millis_timestamps_to_column(timestamps)
+    if column_type == "FLOAT":
+        return taosws.floats_to_column(values)
+    if column_type == "INT":
+        return taosws.ints_to_column(values)
+    if column_type.startswith("BINARY"):
+        return taosws.binary_to_column(values)
 
-    def prepare(self, statement):
-        return self.function(statement, **self.kwargs)
+    raise NotImplementedError(f"Unsupported column type '{column_type}'")
+
+
+class Statement:
+    def __init__(self, columns, subtable, values):
+        self.columns = columns
+        self.subtable = subtable
+        self.values = values
+
+    def prepare(self, statement: TaosStmt) -> TaosStmt:
+        question_marks = ", ".join("?" * len(self.columns))
+        statement.prepare(f"INSERT INTO ? VALUES ({question_marks});")
+        statement.set_tbname(self.subtable)
+
+        bind_params = []
+
+        for col_name, col_type in self.columns.items():
+            val = self.values[col_name]
+            bind_params.append(values_to_column([val], col_type))
+
+        statement.bind_param(bind_params)
+        statement.add_batch()
+        return statement
 
 
 def _cleanup():
