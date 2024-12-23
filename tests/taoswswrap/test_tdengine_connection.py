@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from taoswswrap import Statement
 from taoswswrap.tdengine_connection import Field, TDEngineConnection, TDEngineError
 
 connection_string = os.getenv("TAOSWS_CONNECTION_STRING")
@@ -27,8 +28,20 @@ def is_tdengine_defined() -> bool:
 
 
 @pytest.mark.skipif(not is_tdengine_defined(), reason="TDEngine is not defined")
-def test_tdengine_connection():
+@pytest.mark.parametrize("use_prepared_statement", [True, False])
+def test_tdengine_connection(use_prepared_statement):
     conn = TDEngineConnection(connection_string)
+
+    some_time = 1728444786455
+
+    if use_prepared_statement:
+        insert = Statement(
+            columns={"column1": "TIMESTAMP", "column2": "FLOAT"},
+            subtable="mytable",
+            values={"column1": datetime.fromtimestamp(some_time / 1000), "column2": 1},
+        )
+    else:
+        insert = f"INSERT INTO mytable VALUES ({some_time}, 1)"
 
     res = conn.run(
         statements=[
@@ -37,7 +50,7 @@ def test_tdengine_connection():
             "USE mydb",
             "CREATE STABLE mystable (column1 TIMESTAMP, column2 FLOAT) TAGS (tag1 INT);",
             "CREATE TABLE mytable USING mystable TAGS (1)",
-            "INSERT INTO mytable VALUES (1728444786455, 1)",
+            insert,
         ],
         query="SELECT * FROM mytable",
     )
