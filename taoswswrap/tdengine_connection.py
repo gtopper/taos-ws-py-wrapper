@@ -15,6 +15,7 @@
 import multiprocessing
 import os
 import traceback
+from typing import Any, Optional, Union
 
 import taosws
 from _queue import Empty
@@ -56,7 +57,7 @@ class ErrorResult:
         self.err = err
 
 
-def values_to_column(values, column_type):
+def values_to_column(values: list, column_type: str):
     if column_type == "TIMESTAMP":
         timestamps = [round(timestamp.timestamp() * 1000) for timestamp in values]
         return taosws.millis_timestamps_to_column(timestamps)
@@ -71,7 +72,7 @@ def values_to_column(values, column_type):
 
 
 class Statement:
-    def __init__(self, columns, subtable, values):
+    def __init__(self, columns: dict[str, str], subtable: str, values: dict[str, Any]):
         self.columns = columns
         self.subtable = subtable
         self.values = values
@@ -151,7 +152,13 @@ class TDEngineConnection:
             tb = traceback.format_exc()
             q.put(ErrorResult(tb, e))
 
-    def run(self, statements=None, query=None, retries=2, timeout=5):
+    def run(
+        self,
+        statements: Optional[Union[str, Statement, list[Union[str, Statement]]]] = None,
+        query: Optional[str] = None,
+        retries: int = 2,
+        timeout: int = 5,
+    ):
         statements = statements or []
         if not isinstance(statements, list):
             statements = [statements]
