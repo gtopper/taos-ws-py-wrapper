@@ -57,7 +57,7 @@ class ErrorResult:
         self.err = err
 
 
-def values_to_column(values: list, column_type):
+def values_to_column(values: list, column_type: str):
     if column_type == "TIMESTAMP":
         timestamps = [round(timestamp.timestamp() * 1000) for timestamp in values]
         return taosws.millis_timestamps_to_column(timestamps)
