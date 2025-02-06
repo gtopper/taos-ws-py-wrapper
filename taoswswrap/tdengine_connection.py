@@ -14,7 +14,9 @@
 
 import multiprocessing
 import os
+import time
 import traceback
+import uuid
 from typing import Any, Optional, Union
 
 import taosws
@@ -128,29 +130,48 @@ class TDEngineConnection:
         self.prefix_statements = []
 
     def _run(self, q, statements, query):
-        try:
-            conn = taosws.connect(self._connection_string)
+        uid = uuid.uuid4()
+        with open(f"/tmp/tdengine-subprocess-output-{uid}.txt", "a") as f:
+            start = time.monotonic()
+            try:
+                conn = taosws.connect(self._connection_string)
+                after_connect = time.monotonic()
+                print(f"taosws.connect({self._connection_string}) took {after_connect-start} seconds", file=f)
 
-            for statement in self.prefix_statements + statements:
-                if isinstance(statement, Statement):
-                    prepared_statement = statement.prepare(conn.statement())
-                    prepared_statement.execute()
-                else:
-                    conn.execute(statement)
+                for statement in self.prefix_statements + statements:
+                    before_statement = time.monotonic()
+                    if isinstance(statement, Statement):
+                        prepared_statement = statement.prepare(conn.statement())
+                        prepared_statement.execute()
+                    else:
+                        conn.execute(statement)
+                    after_statement = time.monotonic()
+                    print(f"Executing statement {statement} took {after_statement - before_statement} seconds", file=f)
 
-            if not query:
-                q.put(None)
-                return
+                if not query:
+                    q.put(None)
+                    return
 
-            res = conn.query(query)
+                before_query = time.monotonic()
+                res = conn.query(query)
+                after_query = time.monotonic()
+                print(f"Executing query {query} took {after_query - before_query} seconds", file=f)
 
-            # taosws.TaosField is not serializable
-            fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
+                # taosws.TaosField is not serializable
+                fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
 
-            q.put(QueryResult(list(res), fields))
-        except Exception as e:
-            tb = traceback.format_exc()
-            q.put(ErrorResult(tb, e))
+                after_fields = time.monotonic()
+                print(f"Building fields list of length={len(fields)} took {after_fields - after_query} seconds", file=f)
+
+                q.put(QueryResult(list(res), fields))
+                after_result = time.monotonic()
+                print(f"Putting result into queue took {after_result - after_fields} seconds", file=f)
+            except Exception as e:
+                before_error = time.monotonic()
+                tb = traceback.format_exc()
+                q.put(ErrorResult(tb, e))
+                after_error = time.monotonic()
+                print(f"Putting error into queue took {after_error - before_error} seconds", file=f)
 
     def run(
         self,
