@@ -129,55 +129,56 @@ class Process(mp.Process):
         self._popen.close()
 
 
+def _run(self, connection_string, prefix_statements, q, statements, query):
+    uid = uuid.uuid4()
+    with open(f"/tmp/tdengine-subprocess-output-{uid}.txt", "a") as f:
+        start = time.monotonic()
+        try:
+            conn = taosws.connect(connection_string)
+            after_connect = time.monotonic()
+            print(f"taosws.connect({connection_string}) took {after_connect-start} seconds", file=f)
+
+            for statement in prefix_statements + statements:
+                before_statement = time.monotonic()
+                if isinstance(statement, Statement):
+                    prepared_statement = statement.prepare(conn.statement())
+                    prepared_statement.execute()
+                else:
+                    conn.execute(statement)
+                after_statement = time.monotonic()
+                print(f"Executing statement {statement} took {after_statement - before_statement} seconds", file=f)
+
+            if not query:
+                q.put(None)
+                return
+
+            before_query = time.monotonic()
+            res = conn.query(query)
+            after_query = time.monotonic()
+            print(f"Executing query {query} took {after_query - before_query} seconds", file=f)
+
+            # taosws.TaosField is not serializable
+            fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
+
+            after_fields = time.monotonic()
+            print(f"Building fields list of length={len(fields)} took {after_fields - after_query} seconds", file=f)
+
+            q.put(QueryResult(list(res), fields))
+            after_result = time.monotonic()
+            print(f"Putting result into queue took {after_result - after_fields} seconds", file=f)
+        except Exception as e:
+            before_error = time.monotonic()
+            tb = traceback.format_exc()
+            q.put(ErrorResult(tb, e))
+            after_error = time.monotonic()
+            print(f"Putting error into queue took {after_error - before_error} seconds", file=f)
+
+
 class TDEngineConnection:
     def __init__(self, connection_string, max_concurrency=16):
         self._connection_string = connection_string
         self.prefix_statements = []
         self.semaphore = Semaphore(max_concurrency)
-
-    def _run(self, q, statements, query):
-        uid = uuid.uuid4()
-        with open(f"/tmp/tdengine-subprocess-output-{uid}.txt", "a") as f:
-            start = time.monotonic()
-            try:
-                conn = taosws.connect(self._connection_string)
-                after_connect = time.monotonic()
-                print(f"taosws.connect({self._connection_string}) took {after_connect-start} seconds", file=f)
-
-                for statement in self.prefix_statements + statements:
-                    before_statement = time.monotonic()
-                    if isinstance(statement, Statement):
-                        prepared_statement = statement.prepare(conn.statement())
-                        prepared_statement.execute()
-                    else:
-                        conn.execute(statement)
-                    after_statement = time.monotonic()
-                    print(f"Executing statement {statement} took {after_statement - before_statement} seconds", file=f)
-
-                if not query:
-                    q.put(None)
-                    return
-
-                before_query = time.monotonic()
-                res = conn.query(query)
-                after_query = time.monotonic()
-                print(f"Executing query {query} took {after_query - before_query} seconds", file=f)
-
-                # taosws.TaosField is not serializable
-                fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
-
-                after_fields = time.monotonic()
-                print(f"Building fields list of length={len(fields)} took {after_fields - after_query} seconds", file=f)
-
-                q.put(QueryResult(list(res), fields))
-                after_result = time.monotonic()
-                print(f"Putting result into queue took {after_result - after_fields} seconds", file=f)
-            except Exception as e:
-                before_error = time.monotonic()
-                tb = traceback.format_exc()
-                q.put(ErrorResult(tb, e))
-                after_error = time.monotonic()
-                print(f"Putting error into queue took {after_error - before_error} seconds", file=f)
 
     def run(
         self,
@@ -193,7 +194,9 @@ class TDEngineConnection:
         with self.semaphore:
             while retries >= 0:
                 q = mp.Queue()
-                process = Process(target=self._run, args=[q, statements, query])
+                process = Process(
+                    target=_run, args=[self._connection_string, self.prefix_statements, q, statements, query]
+                )
                 try:
                     t0 = time.monotonic()
                     process.start()
