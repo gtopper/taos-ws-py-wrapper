@@ -17,6 +17,7 @@ import os
 import time
 import traceback
 import uuid
+from threading import Semaphore, Thread
 from typing import Any, Optional, Union
 
 import taosws
@@ -123,11 +124,16 @@ class Process(mp.Process):
         del self._target, self._args, self._kwargs
         multiprocessing.process._children.add(self)
 
+    def kill_and_close(self):
+        self._popen.kill()
+        self._popen.close()
+
 
 class TDEngineConnection:
-    def __init__(self, connection_string):
+    def __init__(self, connection_string, max_concurrency=16):
         self._connection_string = connection_string
         self.prefix_statements = []
+        self.semaphore = Semaphore(max_concurrency)
 
     def _run(self, q, statements, query):
         uid = uuid.uuid4()
@@ -184,45 +190,43 @@ class TDEngineConnection:
         if not isinstance(statements, list):
             statements = [statements]
         overall_retries = retries
-        while retries >= 0:
-            q = mp.Queue()
-            process = Process(target=self._run, args=[q, statements, query])
-            try:
-                t0 = time.monotonic()
-                process.start()
-                t1 = time.monotonic()
-                print(f"111 process.start() took {t1-t0} seconds")
-                process.join(timeout=timeout)
-                t2 = time.monotonic()
-                print(f"111 process.join(timeout={timeout}) took {t2 - t1} seconds")
+        with self.semaphore:
+            while retries >= 0:
+                q = mp.Queue()
+                process = Process(target=self._run, args=[q, statements, query])
                 try:
-                    result = q.get(timeout=0)
-                    t3 = time.monotonic()
-                    print(f"111 q.get(timeout=0) took {t3 - t2} seconds")
-                    if isinstance(result, ErrorResult):
+                    t0 = time.monotonic()
+                    process.start()
+                    t1 = time.monotonic()
+                    print(f"111 process.start() took {t1-t0} seconds")
+                    process.join(timeout=timeout)
+                    t2 = time.monotonic()
+                    print(f"111 process.join(timeout={timeout}) took {t2 - t1} seconds")
+                    try:
+                        result = q.get(timeout=0)
+                        t3 = time.monotonic()
+                        print(f"111 q.get(timeout=0) took {t3 - t2} seconds")
+                        if isinstance(result, ErrorResult):
+                            if retries == 0:
+                                query_msg_part = f" and query '{query}'" if query else ""
+                                raise TDEngineError(
+                                    f"TDEngine statements {statements}{query_msg_part} failed with an error after "
+                                    f"{overall_retries} retries – {type(result.err).__name__}: {result.err}: "
+                                    f"{result.tb}"
+                                )
+                        else:
+                            return result
+                    except Empty:
+                        query_msg_part = f" and query '{query}'" if query else ""
                         if retries == 0:
-                            query_msg_part = f" and query '{query}'" if query else ""
-                            raise TDEngineError(
-                                f"TDEngine statements {statements}{query_msg_part} failed with an error after "
-                                f"{overall_retries} retries – {type(result.err).__name__}: {result.err}: {result.tb}"
+                            raise TimeoutError(
+                                f"TDEngine statements {statements}{query_msg_part} timed out after {timeout} seconds "
+                                f"and {overall_retries} retries"
                             )
-                    else:
-                        return result
-                except Empty:
-                    query_msg_part = f" and query '{query}'" if query else ""
-                    if retries == 0:
-                        raise TimeoutError(
-                            f"TDEngine statements {statements}{query_msg_part} timed out after {timeout} seconds "
-                            f"and {overall_retries} retries"
-                        )
-                retries -= 1
-            finally:
-                try:
-                    process.kill()
-                    t4 = time.monotonic()
-                    print(f"111 process.kill() took {t4-t3} seconds")
-                    process.close()
-                    t5 = time.monotonic()
-                    print(f"111 process.close() took {t5-t4} seconds")
-                except Exception:
-                    pass
+                    retries -= 1
+                finally:
+                    try:
+                        termination_thread = Thread(target=process.kill_and_close)
+                        termination_thread.start()
+                    except Exception:
+                        pass
