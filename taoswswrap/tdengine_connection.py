@@ -202,13 +202,13 @@ class TDEngineConnection:
                     process.start()
                     t1 = time.monotonic()
                     print(f"111 process.start() took {t1-t0} seconds")
-                    process.join(timeout=timeout)
+                    # process.join(timeout=timeout)
                     t2 = time.monotonic()
-                    print(f"111 process.join(timeout={timeout}) took {t2 - t1} seconds")
+                    # print(f"111 process.join(timeout={timeout}) took {t2 - t1} seconds")
                     try:
-                        result = q.get(timeout=0)
+                        result = q.get(timeout=timeout)
                         t3 = time.monotonic()
-                        print(f"111 q.get(timeout=0) took {t3 - t2} seconds")
+                        print(f"111 q.get(timeout={timeout}) took {t3 - t2} seconds")
                         if isinstance(result, ErrorResult):
                             if retries == 0:
                                 query_msg_part = f" and query '{query}'" if query else ""
