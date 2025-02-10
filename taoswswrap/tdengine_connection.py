@@ -129,7 +129,7 @@ class Process(mp.Process):
         self._popen.close()
 
 
-def _run(self, connection_string, prefix_statements, q, statements, query):
+def _run(connection_string, prefix_statements, q, statements, query):
     uid = uuid.uuid4()
     with open(f"/tmp/tdengine-subprocess-output-{uid}.txt", "a") as f:
         start = time.monotonic()
