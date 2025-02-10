@@ -188,10 +188,17 @@ class TDEngineConnection:
             q = mp.Queue()
             process = Process(target=self._run, args=[q, statements, query])
             try:
+                t0 = time.monotonic()
                 process.start()
+                t1 = time.monotonic()
+                print(f"111 process.start() took {t1-t0} seconds")
                 process.join(timeout=timeout)
+                t2 = time.monotonic()
+                print(f"111 process.join(timeout={timeout}) took {t2 - t1} seconds")
                 try:
                     result = q.get(timeout=0)
+                    t3 = time.monotonic()
+                    print(f"111 q.get(timeout=0) took {t3 - t2} seconds")
                     if isinstance(result, ErrorResult):
                         if retries == 0:
                             query_msg_part = f" and query '{query}'" if query else ""
@@ -212,6 +219,10 @@ class TDEngineConnection:
             finally:
                 try:
                     process.kill()
+                    t4 = time.monotonic()
+                    print(f"111 process.kill() took {t4-t3} seconds")
                     process.close()
+                    t5 = time.monotonic()
+                    print(f"111 process.close() took {t5-t4} seconds")
                 except Exception:
                     pass
