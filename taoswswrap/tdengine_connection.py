@@ -15,6 +15,7 @@
 import multiprocessing
 import os
 import traceback
+from threading import Semaphore, Thread
 from typing import Any, Optional, Union
 
 import taosws
@@ -121,36 +122,42 @@ class Process(mp.Process):
         del self._target, self._args, self._kwargs
         multiprocessing.process._children.add(self)
 
+    def kill_and_close(self):
+        self._popen.kill()
+        self._popen.close()
+
+
+def _run(connection_string, prefix_statements, q, statements, query):
+    try:
+        conn = taosws.connect(connection_string)
+
+        for statement in prefix_statements + statements:
+            if isinstance(statement, Statement):
+                prepared_statement = statement.prepare(conn.statement())
+                prepared_statement.execute()
+            else:
+                conn.execute(statement)
+
+        if not query:
+            q.put(None)
+            return
+
+        res = conn.query(query)
+
+        # taosws.TaosField is not serializable
+        fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
+
+        q.put(QueryResult(list(res), fields))
+    except Exception as e:
+        tb = traceback.format_exc()
+        q.put(ErrorResult(tb, e))
+
 
 class TDEngineConnection:
-    def __init__(self, connection_string):
+    def __init__(self, connection_string, max_concurrency=16):
         self._connection_string = connection_string
         self.prefix_statements = []
-
-    def _run(self, q, statements, query):
-        try:
-            conn = taosws.connect(self._connection_string)
-
-            for statement in self.prefix_statements + statements:
-                if isinstance(statement, Statement):
-                    prepared_statement = statement.prepare(conn.statement())
-                    prepared_statement.execute()
-                else:
-                    conn.execute(statement)
-
-            if not query:
-                q.put(None)
-                return
-
-            res = conn.query(query)
-
-            # taosws.TaosField is not serializable
-            fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
-
-            q.put(QueryResult(list(res), fields))
-        except Exception as e:
-            tb = traceback.format_exc()
-            q.put(ErrorResult(tb, e))
+        self.semaphore = Semaphore(max_concurrency)
 
     def run(
         self,
@@ -163,34 +170,34 @@ class TDEngineConnection:
         if not isinstance(statements, list):
             statements = [statements]
         overall_retries = retries
-        while retries >= 0:
-            q = mp.Queue()
-            process = Process(target=self._run, args=[q, statements, query])
-            try:
-                process.start()
-                process.join(timeout=timeout)
+        with self.semaphore:
+            while retries >= 0:
+                q = mp.Queue()
+                process = Process(
+                    target=_run, args=[self._connection_string, self.prefix_statements, q, statements, query]
+                )
                 try:
-                    result = q.get(timeout=0)
-                    if isinstance(result, ErrorResult):
+                    process.start()
+                    try:
+                        result = q.get(timeout=timeout)
+                        if isinstance(result, ErrorResult):
+                            if retries == 0:
+                                query_msg_part = f" and query '{query}'" if query else ""
+                                raise TDEngineError(
+                                    f"TDEngine statements {statements}{query_msg_part} failed with an error after "
+                                    f"{overall_retries} retries – {type(result.err).__name__}: {result.err}: "
+                                    f"{result.tb}"
+                                )
+                        else:
+                            return result
+                    except Empty:
+                        query_msg_part = f" and query '{query}'" if query else ""
                         if retries == 0:
-                            query_msg_part = f" and query '{query}'" if query else ""
-                            raise TDEngineError(
-                                f"TDEngine statements {statements}{query_msg_part} failed with an error after "
-                                f"{overall_retries} retries – {type(result.err).__name__}: {result.err}: {result.tb}"
+                            raise TimeoutError(
+                                f"TDEngine statements {statements}{query_msg_part} timed out after {timeout} seconds "
+                                f"and {overall_retries} retries"
                             )
-                    else:
-                        return result
-                except Empty:
-                    query_msg_part = f" and query '{query}'" if query else ""
-                    if retries == 0:
-                        raise TimeoutError(
-                            f"TDEngine statements {statements}{query_msg_part} timed out after {timeout} seconds "
-                            f"and {overall_retries} retries"
-                        )
-                retries -= 1
-            finally:
-                try:
-                    process.kill()
-                    process.close()
-                except Exception:
-                    pass
+                    retries -= 1
+                finally:
+                    termination_thread = Thread(target=process.kill_and_close)
+                    termination_thread.start()
