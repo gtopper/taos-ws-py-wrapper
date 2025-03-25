@@ -154,12 +154,18 @@ def _run(connection_string, prefix_statements, q, statements, query):
 
 
 class TDEngineConnection:
-    def __init__(self, connection_string, max_concurrency=16):
+    def __init__(self, connection_string, max_concurrency=16, run_directly=False):
         self._connection_string = connection_string
         self.prefix_statements = []
         self.semaphore = Semaphore(max_concurrency)
 
-    def run(
+        if run_directly:
+            self._conn = taosws.connect(self._connection_string)
+            self.run = self.run_directly
+        else:
+            self.run = self.run_indirectly
+
+    def run_indirectly(
         self,
         statements: Optional[Union[str, Statement, list[Union[str, Statement]]]] = None,
         query: Optional[str] = None,
@@ -201,3 +207,25 @@ class TDEngineConnection:
                 finally:
                     termination_thread = Thread(target=process.kill_and_close)
                     termination_thread.start()
+
+    def run_directly(
+        self,
+        statements: Optional[Union[str, Statement, list[Union[str, Statement]]]] = None,
+        query: Optional[str] = None,
+    ):
+        statements = statements or []
+        if not isinstance(statements, list):
+            statements = [statements]
+
+        for statement in self.prefix_statements + statements:
+            if isinstance(statement, Statement):
+                prepared_statement = statement.prepare(self._conn.statement())
+                prepared_statement.execute()
+            else:
+                self._conn.execute(statement)
+
+        res = self._conn.query(query)
+
+        fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
+
+        return QueryResult(list(res), fields)
