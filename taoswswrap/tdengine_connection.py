@@ -212,6 +212,8 @@ class TDEngineConnection:
         self,
         statements: Optional[Union[str, Statement, list[Union[str, Statement]]]] = None,
         query: Optional[str] = None,
+        retries: int = 0,
+        timeout: int = 0,
     ):
         statements = statements or []
         if not isinstance(statements, list):
