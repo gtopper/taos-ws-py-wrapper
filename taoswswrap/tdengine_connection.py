@@ -214,7 +214,7 @@ class TDEngineConnection:
         query: Optional[str] = None,
         retries: int = 0,
         timeout: int = 0,
-    ):
+    ) -> QueryResult:
         statements = statements or []
         if not isinstance(statements, list):
             statements = [statements]
