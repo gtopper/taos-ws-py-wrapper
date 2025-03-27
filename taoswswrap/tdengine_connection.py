@@ -171,7 +171,7 @@ class TDEngineConnection:
         query: Optional[str] = None,
         retries: int = 2,
         timeout: int = 5,
-    ):
+    ) -> Optional[QueryResult]:
         statements = statements or []
         if not isinstance(statements, list):
             statements = [statements]
@@ -214,7 +214,7 @@ class TDEngineConnection:
         query: Optional[str] = None,
         retries: int = 0,
         timeout: int = 0,
-    ) -> QueryResult:
+    ) -> Optional[QueryResult]:
         statements = statements or []
         if not isinstance(statements, list):
             statements = [statements]
@@ -225,6 +225,9 @@ class TDEngineConnection:
                 prepared_statement.execute()
             else:
                 self._conn.execute(statement)
+
+        if not query:
+            return
 
         res = self._conn.query(query)
 
