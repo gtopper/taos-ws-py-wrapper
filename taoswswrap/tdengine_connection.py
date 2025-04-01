@@ -15,9 +15,10 @@
 import multiprocessing
 import os
 import traceback
+from collections.abc import Callable
 from enum import Enum
 from threading import Semaphore, Thread
-from typing import Any, Optional, Union
+from typing import Any, Final, Optional, Union
 
 import taosws
 from _queue import Empty
@@ -28,10 +29,19 @@ class _StrEnum(str, Enum):
     pass
 
 
-class _TimestampPrecision(_StrEnum):
+class TimestampPrecision(_StrEnum):
     ms = "ms"  # milliseconds
     us = "us"  # microseconds
     ns = "ns"  # nanoseconds
+
+
+_TS_PRECISION_TO_FACTOR_AND_FUNC: Final[
+    dict[TimestampPrecision, tuple[int, Callable[[list[int]], taosws.PyColumnView]]]
+] = {
+    TimestampPrecision.ms: (10**3, taosws.millis_timestamps_to_column),
+    TimestampPrecision.us: (10**6, taosws.micros_timestamps_to_column),
+    TimestampPrecision.ns: (10**9, taosws.nanos_timestamps_to_column),
+}
 
 
 class QueryResult:
@@ -69,14 +79,8 @@ class ErrorResult:
         self.err = err
 
 
-def _get_timestamp_column(
-    values: list, timestamp_precision: _TimestampPrecision
-) -> taosws.PyColumnView:
-    factor, to_col_func = {
-        _TimestampPrecision.ms: (10**3, taosws.millis_timestamps_to_column),
-        _TimestampPrecision.us: (10**6, taosws.micros_timestamps_to_column),
-        _TimestampPrecision.ns: (10**9, taosws.nanos_timestamps_to_column),
-    }[timestamp_precision]
+def _get_timestamp_column(values: list, timestamp_precision: TimestampPrecision) -> taosws.PyColumnView:
+    factor, to_col_func = _TS_PRECISION_TO_FACTOR_AND_FUNC[timestamp_precision]
     timestamps = [round(timestamp.timestamp() * factor) for timestamp in values]
     return to_col_func(timestamps)
 
@@ -84,7 +88,7 @@ def _get_timestamp_column(
 def values_to_column(
     values: list,
     column_type: str,
-    timestamp_precision: _TimestampPrecision = _TimestampPrecision.ms,
+    timestamp_precision: TimestampPrecision = TimestampPrecision.ms,
 ) -> taosws.PyColumnView:
     if column_type == "TIMESTAMP":
         return _get_timestamp_column(values, timestamp_precision)
@@ -104,12 +108,12 @@ class Statement:
         columns: dict[str, str],
         subtable: str,
         values: dict[str, Any],
-        timestamp_precision: str = _TimestampPrecision.ms,
+        timestamp_precision: str = TimestampPrecision.ms,
     ) -> None:
         self.columns = columns
         self.subtable = subtable
         self.values = values
-        self.timestamp_precision = _TimestampPrecision[timestamp_precision]
+        self.timestamp_precision = TimestampPrecision[timestamp_precision]
 
     def prepare(self, statement: TaosStmt) -> TaosStmt:
         question_marks = ", ".join("?" * len(self.columns))
