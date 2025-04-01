@@ -53,11 +53,7 @@ class Field:
         self.bytes = bytes
 
     def __eq__(self, other):
-        return (
-            self.name == other.name
-            and self.type == other.type
-            and self.bytes == other.bytes
-        )
+        return self.name == other.name and self.type == other.type and self.bytes == other.bytes
 
     def __repr__(self):
         return f"Field({self.name}, {self.type}, {self.bytes})"
@@ -124,11 +120,7 @@ class Statement:
 
         for col_name, col_type in self.columns.items():
             val = self.values[col_name]
-            bind_params.append(
-                values_to_column(
-                    [val], col_type, timestamp_precision=self.timestamp_precision
-                )
-            )
+            bind_params.append(values_to_column([val], col_type, timestamp_precision=self.timestamp_precision))
 
         statement.bind_param(bind_params)
         statement.add_batch()
@@ -151,12 +143,10 @@ class Process(mp.Process):
     def start(self):
         self._check_closed()
         assert self._popen is None, "cannot start a process twice"
-        assert self._parent_pid == os.getpid(), (
-            "can only start a process object created by current process"
-        )
-        assert not multiprocessing.process._current_process._config.get("daemon"), (
-            "daemonic processes are not allowed to have children"
-        )
+        assert self._parent_pid == os.getpid(), "can only start a process object created by current process"
+        assert not multiprocessing.process._current_process._config.get(
+            "daemon"
+        ), "daemonic processes are not allowed to have children"
         _cleanup()
         self._popen = self._Popen(self)
         self._sentinel = self._popen.sentinel
@@ -188,9 +178,7 @@ def _run(connection_string, prefix_statements, q, statements, query):
         res = conn.query(query)
 
         # taosws.TaosField is not serializable
-        fields = [
-            Field(field.name(), field.type(), field.bytes()) for field in res.fields
-        ]
+        fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
 
         q.put(QueryResult(list(res), fields))
     except Exception as e:
@@ -240,9 +228,7 @@ class TDEngineConnection:
                         result = q.get(timeout=timeout)
                         if isinstance(result, ErrorResult):
                             if retries == 0:
-                                query_msg_part = (
-                                    f" and query '{query}'" if query else ""
-                                )
+                                query_msg_part = f" and query '{query}'" if query else ""
                                 raise TDEngineError(
                                     f"TDEngine statements {statements}{query_msg_part} failed with an error after "
                                     f"{overall_retries} retries – {type(result.err).__name__}: {result.err}: "
@@ -285,8 +271,6 @@ class TDEngineConnection:
 
         res = self._conn.query(query)
 
-        fields = [
-            Field(field.name(), field.type(), field.bytes()) for field in res.fields
-        ]
+        fields = [Field(field.name(), field.type(), field.bytes()) for field in res.fields]
 
         return QueryResult(list(res), fields)
