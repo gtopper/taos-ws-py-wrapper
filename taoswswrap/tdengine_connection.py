@@ -15,12 +15,33 @@
 import multiprocessing
 import os
 import traceback
+from collections.abc import Callable
+from enum import Enum
 from threading import Semaphore, Thread
-from typing import Any, Optional, Union
+from typing import Any, Final, Optional, Union
 
 import taosws
 from _queue import Empty
 from taosws import TaosStmt
+
+
+class _StrEnum(str, Enum):
+    pass
+
+
+class TimestampPrecision(_StrEnum):
+    ms = "ms"  # milliseconds
+    us = "us"  # microseconds
+    ns = "ns"  # nanoseconds
+
+
+_TS_PRECISION_TO_FACTOR_AND_FUNC: Final[
+    dict[TimestampPrecision, tuple[int, Callable[[list[int]], taosws.PyColumnView]]]
+] = {
+    TimestampPrecision.ms: (10**3, taosws.millis_timestamps_to_column),
+    TimestampPrecision.us: (10**6, taosws.micros_timestamps_to_column),
+    TimestampPrecision.ns: (10**9, taosws.nanos_timestamps_to_column),
+}
 
 
 class QueryResult:
@@ -58,10 +79,19 @@ class ErrorResult:
         self.err = err
 
 
-def values_to_column(values: list, column_type: str):
+def _get_timestamp_column(values: list, timestamp_precision: TimestampPrecision) -> taosws.PyColumnView:
+    factor, to_col_func = _TS_PRECISION_TO_FACTOR_AND_FUNC[timestamp_precision]
+    timestamps = [round(timestamp.timestamp() * factor) for timestamp in values]
+    return to_col_func(timestamps)
+
+
+def values_to_column(
+    values: list,
+    column_type: str,
+    timestamp_precision: TimestampPrecision = TimestampPrecision.ms,
+) -> taosws.PyColumnView:
     if column_type == "TIMESTAMP":
-        timestamps = [round(timestamp.timestamp() * 1000) for timestamp in values]
-        return taosws.millis_timestamps_to_column(timestamps)
+        return _get_timestamp_column(values, timestamp_precision)
     if column_type == "FLOAT":
         return taosws.floats_to_column(values)
     if column_type == "INT":
@@ -73,10 +103,17 @@ def values_to_column(values: list, column_type: str):
 
 
 class Statement:
-    def __init__(self, columns: dict[str, str], subtable: str, values: dict[str, Any]):
+    def __init__(
+        self,
+        columns: dict[str, str],
+        subtable: str,
+        values: dict[str, Any],
+        timestamp_precision: str = TimestampPrecision.ms,
+    ) -> None:
         self.columns = columns
         self.subtable = subtable
         self.values = values
+        self.timestamp_precision = TimestampPrecision[timestamp_precision]
 
     def prepare(self, statement: TaosStmt) -> TaosStmt:
         question_marks = ", ".join("?" * len(self.columns))
@@ -87,7 +124,7 @@ class Statement:
 
         for col_name, col_type in self.columns.items():
             val = self.values[col_name]
-            bind_params.append(values_to_column([val], col_type))
+            bind_params.append(values_to_column([val], col_type, timestamp_precision=self.timestamp_precision))
 
         statement.bind_param(bind_params)
         statement.add_batch()
@@ -180,7 +217,14 @@ class TDEngineConnection:
             while retries >= 0:
                 q = mp.Queue()
                 process = Process(
-                    target=_run, args=[self._connection_string, self.prefix_statements, q, statements, query]
+                    target=_run,
+                    args=[
+                        self._connection_string,
+                        self.prefix_statements,
+                        q,
+                        statements,
+                        query,
+                    ],
                 )
                 try:
                     process.start()

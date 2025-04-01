@@ -18,7 +18,13 @@ from datetime import datetime, timezone
 import pytest
 
 from taoswswrap import Statement
-from taoswswrap.tdengine_connection import Field, TDEngineConnection, TDEngineError
+from taoswswrap.tdengine_connection import (
+    _TS_PRECISION_TO_FACTOR_AND_FUNC,
+    Field,
+    TDEngineConnection,
+    TDEngineError,
+    TimestampPrecision,
+)
 
 connection_string = os.getenv("TAOSWS_CONNECTION_STRING")
 
@@ -54,7 +60,10 @@ def test_tdengine_connection(use_prepared_statement):
         ],
         query="SELECT * FROM mytable",
     )
-    assert res.fields == [Field("column1", "TIMESTAMP", 8), Field("column2", "FLOAT", 4)]
+    assert res.fields == [
+        Field("column1", "TIMESTAMP", 8),
+        Field("column2", "FLOAT", 4),
+    ]
     assert len(res.data) == 1
     data = res.data[0]
     assert len(data) == 2
@@ -83,3 +92,7 @@ def test_tdengine_connection_create_db():
 
     res = conn.run(statements="CREATE DATABASE IF NOT EXISTS mydb")
     assert res is None
+
+
+def test_all_precisions_are_in_map() -> None:
+    assert _TS_PRECISION_TO_FACTOR_AND_FUNC.keys() == set(TimestampPrecision)
